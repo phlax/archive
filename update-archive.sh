@@ -26,6 +26,7 @@ fi
 build_docs () {
     local version="$1"
     cd "${ENVOY_SRC}" || exit 1
+    git fetch origin
     git checkout "${version}"
     export DOCS_BUILD_RELEASE=1
     ./docs/build.sh
