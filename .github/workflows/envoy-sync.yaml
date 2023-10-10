@@ -41,6 +41,7 @@ jobs:
         ref: main
         path: envoy
         fetch-depth: 0
+        fetch-tags: 1
 
     # Checkout the repo
     - name: 'Checkout Repository'
