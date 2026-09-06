@@ -8,9 +8,29 @@ bazel_dep(name = "rules_python", version = "2.2.0")
 
 bazel_dep(name = "toolchains_llvm", version = "1.9.0.envoy", dev_dependency = True)
 
-# Loaded by `//:BUILD` (jq) and `//docs:BUILD` (pkg_files/pkg_filegroup)
+# Loaded by `//:BUILD` (jq), `//docs:BUILD` (pkg_files/pkg_filegroup) and
+# `//tools/archive:BUILD` (jq, jq toolchain for sh_binary/sh_test)
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
+
+# Used by `//tools/archive:BUILD` sh_binary/sh_test targets for `$(JQ_BIN)`
+bazel_dep(name = "rules_shell", version = "0.4.1")
+
+bazel_lib_toolchains = use_extension("@aspect_bazel_lib//lib:extensions.bzl", "toolchains")
+bazel_lib_toolchains.jq(version = "1.7")
+use_repo(bazel_lib_toolchains, "jq_toolchains")
+
+# Only linux-amd64 is fetched for now - the archive tooling only ever runs in
+# CI (ubuntu-24.04) or local dev on linux-amd64. Add other platforms here if
+# that changes.
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "rclone",
+    build_file = "//bazel:rclone.BUILD",
+    sha256 = "9523d558fd722af160201fd6dfaca143aeb7b3a84e316c36b2946ef4fcec0e59",
+    strip_prefix = "rclone-v1.70.3-linux-amd64",
+    urls = ["https://downloads.rclone.org/v1.70.3/rclone-v1.70.3-linux-amd64.zip"],
+)
 
 archive_override(
     module_name = "envoy",
@@ -40,7 +60,7 @@ use_repo(
 envoy_toolchains_ext = use_extension("@envoy//bazel:extensions.bzl", "envoy_toolchains_extension")
 use_repo(envoy_toolchains_ext, "clang_platform")
 
-# `@envoy_repo//:project` is used by `update-archive.sh` to resolve Envoy releases
+# `@envoy_repo//:project` is used by `//tools/archive:reconcile` to resolve Envoy releases
 envoy_repo_ext = use_extension("@envoy//bazel:extensions.bzl", "envoy_repo_extension")
 use_repo(envoy_repo_ext, "envoy_repo")
 
