@@ -143,7 +143,7 @@ jobs:
                 FAILED+=("$version")
             fi
             rm -f "${RUNNER_TEMP}/${version}.tar.gz"
-        done < <(jq -r '.missing[]' "${RUNNER_TEMP}/plan.json")
+        done < "${RUNNER_TEMP}/plan.json.missing.txt"
         if [[ "${#FAILED[@]}" -ne 0 ]]; then
             echo "Failed versions: ${FAILED[*]}" >&2
             exit 1

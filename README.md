@@ -36,14 +36,23 @@ state in git, and makes no commits:
 
 1. **have** — the version prefixes under `gs://$GCS_ARCHIVE_BUCKET/envoy/docs/`.
 2. **want** — the Envoy releases whose minor version is currently stable,
-   resolved from `@envoy_repo//:project`.
-3. **missing** — `want` minus `have`, written to `plan.json` by
-   `//tools/archive:reconcile`.
+   resolved from `@envoy_repo//:project` by the `//tools/archive:plan_inputs`
+   `jq()` build action (`tools/archive/jq/plan.jq`) - a pure function of the
+   Envoy release metadata, computed at build time rather than run time.
+3. **missing** — `want` minus `have`, written to `plan.json` (and a
+   `plan.json.missing.txt`, one version per line) by `//tools/archive:reconcile`.
 4. Each missing version is built with `tools/archive/build-docs.sh` and
    published by `//tools/archive:publish`, which uploads it with the pinned,
    hermetic `rclone` binary and `--ignore-existing`, verifies the uploaded
    object count against the tarball, and regenerates the manifest if the
    published set changed.
+
+All of the jq logic - semver sorting, the want/missing/manifest/digest
+transforms - lives in standalone programs under `tools/archive/jq/`, imported
+via jq's module system (`import "versions" as v;`) rather than duplicated
+inline in bash. `reconcile.sh`/`publish.sh` only orchestrate rclone I/O and
+pass files between the `.jq` programs, run via the `@aspect_bazel_lib` jq
+toolchain.
 
 To see what would be done without publishing anything, run the workflow with
 `dry-run: true` (scheduled runs are dry runs), or locally:

@@ -1,15 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Resolve relative to this script for direct execution and Bazel runfiles.
-# shellcheck source=tools/archive/manifest.sh
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/manifest.sh"
+# --- begin runfiles.bash initialization v3 ---
+if [[ ! -d "${RUNFILES_DIR:-/dev/null}" && ! -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
+    if [[ -f "$0.runfiles_manifest" ]]; then
+        export RUNFILES_MANIFEST_FILE="$0.runfiles_manifest"
+    elif [[ -f "$0.runfiles/MANIFEST" ]]; then
+        export RUNFILES_MANIFEST_FILE="$0.runfiles/MANIFEST"
+    elif [[ -f "$0.runfiles/bazel_tools/tools/bash/runfiles/runfiles.bash" ]]; then
+        export RUNFILES_DIR="$0.runfiles"
+    fi
+fi
+if [[ -f "${RUNFILES_DIR:-/dev/null}/bazel_tools/tools/bash/runfiles/runfiles.bash" ]]; then
+    # shellcheck disable=SC1090
+    source "${RUNFILES_DIR}/bazel_tools/tools/bash/runfiles/runfiles.bash"
+elif [[ -f "${RUNFILES_MANIFEST_FILE:-/dev/null}" ]]; then
+    # shellcheck disable=SC1090
+    source "$(grep -m1 "^bazel_tools/tools/bash/runfiles/runfiles.bash " "${RUNFILES_MANIFEST_FILE}" | cut -d ' ' -f2-)"
+else
+    echo "ERROR: cannot find @bazel_tools//tools/bash/runfiles:runfiles.bash" >&2
+    exit 1
+fi
+# --- end runfiles.bash initialization v3 ---
 
 ARCHIVE_BUCKET=""
 META_BUCKET=""
-PROJECT_JSON=""
+PLAN_INPUTS=""
 OUTPUT=""
 DRY_RUN=false
+RCLONE_RLOCATION=""
+MANIFEST_SH_RLOCATION=""
+JQ_LIB_RLOCATION=""
+JQ_LIST_VERSIONS_RLOCATION=""
+JQ_MISSING_RLOCATION=""
+JQ_SUMMARY_RLOCATION=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -21,8 +45,8 @@ while [[ $# -gt 0 ]]; do
             META_BUCKET="$2"
             shift 2
             ;;
-        --project-json)
-            PROJECT_JSON="$2"
+        --plan-inputs)
+            PLAN_INPUTS="$2"
             shift 2
             ;;
         --output)
@@ -33,12 +57,28 @@ while [[ $# -gt 0 ]]; do
             DRY_RUN=true
             shift
             ;;
-        --rclone-bin)
-            RCLONE_BIN="$2"
+        --rclone)
+            RCLONE_RLOCATION="$2"
             shift 2
             ;;
-        --jq-bin)
-            JQ_BIN="$2"
+        --manifest-sh)
+            MANIFEST_SH_RLOCATION="$2"
+            shift 2
+            ;;
+        --jq-lib)
+            JQ_LIB_RLOCATION="$2"
+            shift 2
+            ;;
+        --jq-list-versions)
+            JQ_LIST_VERSIONS_RLOCATION="$2"
+            shift 2
+            ;;
+        --jq-missing)
+            JQ_MISSING_RLOCATION="$2"
+            shift 2
+            ;;
+        --jq-summary)
+            JQ_SUMMARY_RLOCATION="$2"
             shift 2
             ;;
         *)
@@ -48,16 +88,25 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [[ -z "${ARCHIVE_BUCKET}" || -z "${PROJECT_JSON}" ]]; then
-    echo "Usage: $0 --archive-bucket <bucket> --project-json <path> [--meta-bucket <bucket>] [--output <path>] [--dry-run]" >&2
+if [[ -z "${ARCHIVE_BUCKET}" || -z "${PLAN_INPUTS}" ]]; then
+    echo "Usage: $0 --archive-bucket <bucket> [--meta-bucket <bucket>] [--output <path>] [--dry-run]" >&2
     exit 2
 fi
 
-archive_init_tools
-archive_init_auth
+RCLONE_BIN="$(rlocation "${RCLONE_RLOCATION}")"
+JQ_LIB_DIR="$(dirname "$(rlocation "${JQ_LIB_RLOCATION}")")"
+JQ_LIST_VERSIONS="$(rlocation "${JQ_LIST_VERSIONS_RLOCATION}")"
+JQ_MISSING="$(rlocation "${JQ_MISSING_RLOCATION}")"
+JQ_SUMMARY="$(rlocation "${JQ_SUMMARY_RLOCATION}")"
+PLAN_INPUTS_PATH="$(rlocation "${PLAN_INPUTS}")"
 
-if [[ ! -f "${PROJECT_JSON}" ]]; then
-    echo "Envoy project data not found: ${PROJECT_JSON}. This is provided by @envoy_repo//:project and resolved from runfiles, so this must be run with bazel run." >&2
+# shellcheck source=tools/archive/manifest.sh
+source "$(rlocation "${MANIFEST_SH_RLOCATION}")"
+
+archive_init_auth true
+
+if [[ ! -f "${PLAN_INPUTS_PATH}" ]]; then
+    echo "Plan inputs not found: ${PLAN_INPUTS_PATH}. This is built by //tools/archive:plan_inputs and resolved from runfiles, so this must be run with bazel run." >&2
     exit 1
 fi
 
@@ -66,79 +115,33 @@ trap 'rm -rf "${TMPDIR}"' EXIT
 
 archive_list_versions "${ARCHIVE_BUCKET}" > "${TMPDIR}/have.json"
 
-"${JQ_BIN}" '
-  def semver: ltrimstr("v") | split(".") | map(tonumber);
-  def minor: ltrimstr("v") | split(".") | .[0:2] | join(".");
-  def sort_versions: sort_by(semver) | reverse;
-  .stable_versions as $stable
-  | [
-      .releases[]
-      | if startswith("v") then . else "v" + . end
-      | select((minor) as $minor | $stable | index($minor))
-    ]
-  | sort_versions
-' "${PROJECT_JSON}" > "${TMPDIR}/want.json"
+"${JQ_BIN}" -n -L "${JQ_LIB_DIR}" -f "${JQ_MISSING}" \
+    --slurpfile plan_inputs "${PLAN_INPUTS_PATH}" \
+    --slurpfile have "${TMPDIR}/have.json" > "${TMPDIR}/plan.json"
 
-"${JQ_BIN}" '
-  def semver: ltrimstr("v") | split(".") | map(tonumber);
-  def minor: ltrimstr("v") | split(".") | .[0:2] | join(".");
-  def sort_versions: sort_by(semver) | reverse;
-  .stable_versions as $stable
-  | [
-      .releases[]
-      | if startswith("v") then . else "v" + . end
-      | select(((minor) as $minor | $stable | index($minor)) | not)
-    ]
-  | sort_versions
-' "${PROJECT_JSON}" > "${TMPDIR}/excluded.json"
-
-"${JQ_BIN}" -n \
-    --slurpfile want "${TMPDIR}/want.json" \
-    --slurpfile have "${TMPDIR}/have.json" '
-  def semver: ltrimstr("v") | split(".") | map(tonumber);
-  def sort_versions: sort_by(semver) | reverse;
-  ($have[0]) as $have_versions
-  | [ $want[0][] as $version | select(($have_versions | index($version)) | not) | $version ] | sort_versions
-' > "${TMPDIR}/missing.json"
-
-have_count="$("${JQ_BIN}" 'length' "${TMPDIR}/have.json")"
-want_count="$("${JQ_BIN}" 'length' "${TMPDIR}/want.json")"
-missing_count="$("${JQ_BIN}" 'length' "${TMPDIR}/missing.json")"
-missing_versions="$("${JQ_BIN}" -r 'join(" ")' "${TMPDIR}/missing.json")"
-excluded_count="$("${JQ_BIN}" 'length' "${TMPDIR}/excluded.json")"
-excluded_versions="$("${JQ_BIN}" -r 'join(" ")' "${TMPDIR}/excluded.json")"
-
-printf 'archive: gs://%s/%s\n' "${ARCHIVE_BUCKET}" "${ARCHIVE_DOCS_PREFIX}"
-printf 'have: %s\n' "${have_count}"
-printf 'want: %s\n' "${want_count}"
-printf 'missing (%s): %s\n' "${missing_count}" "${missing_versions:-'-'}"
-printf 'excluded (%s): %s\n' "${excluded_count}" "${excluded_versions:-'-'}"
+if [[ -n "${OUTPUT}" ]]; then
+    cp "${TMPDIR}/plan.json" "${OUTPUT}"
+    "${JQ_BIN}" -r '.missing[]' "${TMPDIR}/plan.json" > "${OUTPUT}.missing.txt"
+    printf 'plan written: %s\n' "${OUTPUT}"
+fi
 
 if [[ -n "${META_BUCKET}" ]]; then
     archive_fetch_manifest "${META_BUCKET}" > "${TMPDIR}/existing.json"
-    recorded_count="$("${JQ_BIN}" '.versions // {} | length' "${TMPDIR}/existing.json")"
-    unrecorded="$("${JQ_BIN}" -n -r \
-        --slurpfile have "${TMPDIR}/have.json" \
-        --slurpfile existing "${TMPDIR}/existing.json" '
-      def semver: ltrimstr("v") | split(".") | map(tonumber);
-      def sort_versions: sort_by(semver) | reverse;
-      ($existing[0].versions // {} | keys) as $recorded
-      | [ $have[0][] as $version | select(($recorded | index($version)) | not) | $version ] | sort_versions | join(" ")
-    ')"
-    printf 'manifest: gs://%s/%s\n' "${META_BUCKET}" "${ARCHIVE_MANIFEST_PATH}"
-    printf 'manifest versions: %s\n' "${recorded_count}"
-    if [[ -n "${unrecorded}" ]]; then
-        unrecorded_count="$(wc -w <<< "${unrecorded}" | tr -d ' ')"
-        printf 'manifest is out of date, missing (%s): %s\n' "${unrecorded_count}" "${unrecorded}"
-    fi
-fi
-
-if [[ -n "${OUTPUT}" ]]; then
-    "${JQ_BIN}" -n \
-        --slurpfile missing "${TMPDIR}/missing.json" \
-        --slurpfile have "${TMPDIR}/have.json" \
-        '{missing: $missing[0], have: $have[0]}' > "${OUTPUT}"
-    printf 'plan written: %s\n' "${OUTPUT}"
+    "${JQ_BIN}" -n -r -L "${JQ_LIB_DIR}" -f "${JQ_SUMMARY}" \
+        --arg archive_url "gs://${ARCHIVE_BUCKET}/${ARCHIVE_DOCS_PREFIX}" \
+        --arg meta_url "gs://${META_BUCKET}/${ARCHIVE_MANIFEST_PATH}" \
+        --argjson has_meta true \
+        --slurpfile plan_inputs "${PLAN_INPUTS_PATH}" \
+        --slurpfile plan "${TMPDIR}/plan.json" \
+        --slurpfile existing "${TMPDIR}/existing.json"
+else
+    "${JQ_BIN}" -n -r -L "${JQ_LIB_DIR}" -f "${JQ_SUMMARY}" \
+        --arg archive_url "gs://${ARCHIVE_BUCKET}/${ARCHIVE_DOCS_PREFIX}" \
+        --arg meta_url "" \
+        --argjson has_meta false \
+        --slurpfile plan_inputs "${PLAN_INPUTS_PATH}" \
+        --slurpfile plan "${TMPDIR}/plan.json" \
+        --slurpfile existing <(printf '{}\n')
 fi
 
 if [[ "${DRY_RUN}" == true ]]; then
