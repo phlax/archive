@@ -31,44 +31,47 @@ Federation is a TODO.
 
 ## Syncing the archive
 
-`.github/workflows/envoy-sync.yaml` runs a stateless reconciler - it holds no
-state in git, and makes no commits:
+`.github/workflows/envoy-sync.yaml` runs a stateless sync - it holds no state in
+git, and makes no commits.
 
-1. **have** — the version prefixes under `gs://$GCS_ARCHIVE_BUCKET/envoy/docs/`.
-2. **want** — the Envoy releases whose minor version is currently stable,
-   resolved from `@envoy_repo//:project` by the `//tools/archive:plan_inputs`
-   `jq()` build action (`tools/archive/jq/plan.jq`) - a pure function of the
-   Envoy release metadata, computed at build time rather than run time.
-3. **missing** — `want` minus `have`, written to `plan.json` (and a
-   `plan.json.missing.txt`, one version per line) by `//tools/archive:reconcile`.
-4. Each missing version is built with `tools/archive/build-docs.sh` and
-   published by `//tools/archive:publish`, which uploads it with the pinned,
-   hermetic `rclone` binary and `--ignore-existing`, verifies the uploaded
-   object count against the tarball, and regenerates the manifest if the
-   published set changed.
+The read side is a Bazel graph:
 
-All of the jq logic - semver sorting, the want/missing/manifest/digest
-transforms - lives in standalone programs under `tools/archive/jq/`, imported
-via jq's module system (`import "versions" as v;`) rather than duplicated
-inline in bash. `reconcile.sh`/`publish.sh` only orchestrate rclone I/O and
-pass files between the `.jq` programs, run via the `@aspect_bazel_lib` jq
-toolchain.
+1. `//tools/archive:listing` and `//tools/archive:existing` are uncached local
+   `genrule`s that use the pinned `@rclone//:rclone` binary to read the public
+   buckets anonymously.
+2. `//tools/archive:plan_inputs`, `:have`, `:plan`, `:missing_txt`,
+   `:new_entries`, `:manifest`, `:changed`, `:dropped`, and `:summary` are
+   `@aspect_bazel_lib` `jq()` actions. The jq programs live under
+   `tools/archive/jq/` and share `versions.jq` for semver helpers.
+3. `bazel build //tools/archive:plan` writes `bazel-bin/tools/archive/plan.json`.
+   `bazel build //tools/archive:manifest` writes
+   `bazel-bin/tools/archive/versions.json`.
 
-To see what would be done without publishing anything, run the workflow with
-`dry-run: true` (scheduled runs are dry runs), or locally:
+The bucket names are Bazel `string_flag`s, defaulting to the public buckets
+`envoy-cncf-archive` and `envoy-cncf-meta`. CI overrides them from repository
+variables:
 
 ```console
-$ bazel run //tools/archive:reconcile -- \
-      --archive-bucket=<archive-bucket> \
-      --meta-bucket=<meta-bucket> \
-      --output=/tmp/plan.json \
-      --dry-run
+$ bazel build \
+    --//tools/archive:archive_bucket="$GCS_ARCHIVE_BUCKET" \
+    --//tools/archive:meta_bucket="$GCS_META_BUCKET" \
+    //tools/archive:plan //tools/archive:manifest //tools/archive:summary
 ```
 
-The Bazel targets configure rclone from the environment only. In CI,
-`envoyproxy/toolshed/actions/gcp/setup` writes `GCP_KEY_PATH` to `$GITHUB_ENV`;
-locally, when `GCP_KEY_PATH` is unset, rclone uses
-`RCLONE_CONFIG_GCS_ANONYMOUS=true` for read-only dry-runs.
+The write side is deliberately small: `//tools/archive:publish` extracts one
+docs tarball and uploads it with `rclone copy --ignore-existing`, and
+`//tools/archive:publish_manifest` uploads `versions.json` only when
+`changed.txt` says it changed. Both require `GCP_KEY_PATH` to point at a readable
+service-account key.
+
+To see what would be done without publishing anything, run the workflow with
+`dry-run: true` (scheduled runs are dry runs), or locally build the read-side
+targets and inspect the summary:
+
+```console
+$ bazel build //tools/archive:plan //tools/archive:missing_txt //tools/archive:summary
+$ cat bazel-bin/tools/archive/summary.txt
+```
 
 ### Manifest
 
@@ -79,11 +82,11 @@ number of objects published, when it was published, and a `digest`:
 $ sha256sum <<< "$(<relative-object-path> <md5-hex> for each object, sorted)"
 ```
 
-The MD5 hex digest comes from `rclone lsjson --hash`, so the digest can be
-recomputed by anyone with read access to the bucket, without downloading the
-docs. Entries for versions that are already recorded are never recomputed -
-published docs are immutable, and the recorded digest is what they are verified
-against.
+The object path is relative to the version prefix, and the MD5 hex digest comes
+from `rclone lsjson --hash`, so the digest can be recomputed by anyone with read
+access to the bucket, without downloading the docs. Entries for versions that
+are already recorded are never recomputed - published docs are immutable, and
+the recorded digest is what they are verified against.
 
 The manifest also carries the stable/archived classification of the published
 versions, so the website can consume it in place of `versions.yaml`.
@@ -91,5 +94,5 @@ versions, so the website can consume it in place of `versions.yaml`.
 ## `docs/`
 
 The `docs/` directory holds the pre-migration copy of the archive in git. It is
-no longer read or written by any workflow, and is scheduled for removal - do
-not add anything that depends on it.
+no longer read or written by any workflow, and is scheduled for removal - do not
+add anything that depends on it.
