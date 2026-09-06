@@ -12,6 +12,15 @@ bazel_dep(name = "toolchains_llvm", version = "1.9.0.envoy", dev_dependency = Tr
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "rclone_linux_amd64",
+    build_file = "//bazel:rclone.BUILD",
+    sha256 = "9523d558fd722af160201fd6dfaca143aeb7b3a84e316c36b2946ef4fcec0e59",
+    strip_prefix = "rclone-v1.70.3-linux-amd64",
+    urls = ["https://downloads.rclone.org/v1.70.3/rclone-v1.70.3-linux-amd64.zip"],
+)
+
 archive_override(
     module_name = "envoy",
     urls = ["https://github.com/envoyproxy/envoy/archive/69bc1cf5355798df3a041eafffda0a954b3b89d7.tar.gz"],
@@ -40,7 +49,7 @@ use_repo(
 envoy_toolchains_ext = use_extension("@envoy//bazel:extensions.bzl", "envoy_toolchains_extension")
 use_repo(envoy_toolchains_ext, "clang_platform")
 
-# `@envoy_repo//:project` is used by `update-archive.sh` to resolve Envoy releases
+# `@envoy_repo//:project` is used by `//tools/archive:reconcile` to resolve Envoy releases
 envoy_repo_ext = use_extension("@envoy//bazel:extensions.bzl", "envoy_repo_extension")
 use_repo(envoy_repo_ext, "envoy_repo")
 
