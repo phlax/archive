@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
-# Sourced by reconcile.sh, publish.sh and manifest_test.sh: the rclone I/O
-# layer for the archive bucket and its manifest. All jq logic lives in
-# tools/archive/jq/*.jq - this file only shells out to rclone/jq.
+# Sourced by reconcile.sh and publish.sh: the rclone I/O layer for the
+# archive bucket and its manifest. All jq logic lives in tools/archive/jq/*.jq
+# - this file only shells out to rclone/jq.
 #
 # Callers resolve RCLONE_BIN, JQ_BIN and any `.jq` script paths they need via
 # Bazel runfiles (see @bazel_tools//tools/bash/runfiles) *before* sourcing

@@ -194,7 +194,7 @@ trap 'rm -rf "${TMPDIR}"' EXIT
 DOCS_DIR="${TMPDIR}/docs"
 mkdir -p "${DOCS_DIR}"
 tar --no-same-owner -xzf "${TARBALL}" -C "${DOCS_DIR}"
-files="$(tar -tzf "${TARBALL}" | grep -v '/$' | wc -l | tr -d ' ')"
+files="$(find "${DOCS_DIR}" -type f | wc -l | tr -d ' ')"
 printf 'Publishing %s (%s files)\n' "${VERSION}" "${files}"
 
 if [[ "${DRY_RUN}" == true ]]; then
