@@ -12,6 +12,15 @@ bazel_dep(name = "toolchains_llvm", version = "1.9.0.envoy", dev_dependency = Tr
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 
+http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
+http_archive(
+    name = "rclone_linux_amd64",
+    build_file = "//bazel:rclone.BUILD",
+    sha256 = "9523d558fd722af160201fd6dfaca143aeb7b3a84e316c36b2946ef4fcec0e59",
+    strip_prefix = "rclone-v1.70.3-linux-amd64",
+    urls = ["https://downloads.rclone.org/v1.70.3/rclone-v1.70.3-linux-amd64.zip"],
+)
+
 archive_override(
     module_name = "envoy",
     urls = ["https://github.com/envoyproxy/envoy/archive/69bc1cf5355798df3a041eafffda0a954b3b89d7.tar.gz"],
@@ -48,12 +57,3 @@ use_repo(envoy_repo_ext, "envoy_repo")
 # modules, so it is imported rather than redeclared.
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 use_repo(pip, "base_pip3")
-
-# Requirements for `//tools/archive` - the GCS client used to reconcile the
-# docs archive bucket is not provided by `base_pip3`.
-pip.parse(
-    hub_name = "archive_pip3",
-    python_version = "3.12",
-    requirements_lock = "//tools/archive:requirements.txt",
-)
-use_repo(pip, "archive_pip3")

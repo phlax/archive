@@ -72,6 +72,8 @@ jobs:
       with:
         key: ${{ secrets.GCS_ARCHIVE_KEY }}
 
+    # The setup action writes GCP_KEY_PATH to $GITHUB_ENV. The archive Bazel
+    # targets read that environment variable directly for rclone GCS auth.
     - name: 'Repin Envoy'
       working-directory: archive
       run: |

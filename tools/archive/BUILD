@@ -1,50 +1,48 @@
-load("@archive_pip3//:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("@base_pip3//:requirements.bzl", base_requirement = "requirement")
-
-exports_files([
-    "requirements.txt",
-])
-
-py_library(
-    name = "manifest",
-    srcs = ["manifest.py"],
-    imports = ["."],
-    deps = [base_requirement("packaging")],
-    visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "gcs",
-    srcs = ["gcs.py"],
-    imports = ["."],
-    deps = [requirement("google-cloud-storage")],
-)
-
-py_test(
+sh_test(
     name = "manifest_test",
-    srcs = ["manifest_test.py"],
-    deps = [":manifest"],
+    srcs = ["manifest_test.sh"],
+    args = ["--jq-bin=$(rootpath @envoy//tools/jq)"],
+    data = [
+        "manifest.sh",
+        "testdata/existing-manifest.json",
+        "testdata/have.json",
+        "testdata/v1.33.0-objects.json",
+        "testdata/v1.34.0-objects.json",
+        "testdata/v1.35.0-objects.json",
+        "testdata/v1.36.0-objects.json",
+        "testdata/v1.40.0-objects.json",
+        "@envoy//tools/jq",
+    ],
 )
 
-py_binary(
+sh_binary(
     name = "reconcile",
-    srcs = ["reconcile.py"],
-    args = ["--project-json=$(rootpath @envoy_repo//:project)"],
-    data = ["@envoy_repo//:project"],
-    deps = [
-        ":gcs",
-        ":manifest",
+    srcs = ["reconcile.sh"],
+    args = [
+        "--project-json=$(rootpath @envoy_repo//:project)",
+        "--rclone-bin=$(rootpath @rclone_linux_amd64//:rclone)",
+        "--jq-bin=$(rootpath @envoy//tools/jq)",
+    ],
+    data = [
+        "manifest.sh",
+        "@envoy//tools/jq",
+        "@envoy_repo//:project",
+        "@rclone_linux_amd64//:rclone",
     ],
     visibility = ["//visibility:public"],
 )
 
-py_binary(
+sh_binary(
     name = "publish",
-    srcs = ["publish.py"],
-    deps = [
-        ":gcs",
-        ":manifest",
+    srcs = ["publish.sh"],
+    args = [
+        "--rclone-bin=$(rootpath @rclone_linux_amd64//:rclone)",
+        "--jq-bin=$(rootpath @envoy//tools/jq)",
+    ],
+    data = [
+        "manifest.sh",
+        "@envoy//tools/jq",
+        "@rclone_linux_amd64//:rclone",
     ],
     visibility = ["//visibility:public"],
 )

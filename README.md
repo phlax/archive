@@ -40,10 +40,10 @@ state in git, and makes no commits:
 3. **missing** — `want` minus `have`, written to `plan.json` by
    `//tools/archive:reconcile`.
 4. Each missing version is built with `tools/archive/build-docs.sh` and
-   published by `//tools/archive:publish`, which uploads it with
-   `gcloud storage rsync --no-clobber`, verifies the uploaded object count
-   against the tarball, and regenerates the manifest if the published set
-   changed.
+   published by `//tools/archive:publish`, which uploads it with the pinned,
+   hermetic `rclone` binary and `--ignore-existing`, verifies the uploaded
+   object count against the tarball, and regenerates the manifest if the
+   published set changed.
 
 To see what would be done without publishing anything, run the workflow with
 `dry-run: true` (scheduled runs are dry runs), or locally:
@@ -56,16 +56,21 @@ $ bazel run //tools/archive:reconcile -- \
       --dry-run
 ```
 
+The Bazel targets configure rclone from the environment only. In CI,
+`envoyproxy/toolshed/actions/gcp/setup` writes `GCP_KEY_PATH` to `$GITHUB_ENV`;
+locally, when `GCP_KEY_PATH` is unset, rclone uses
+`RCLONE_CONFIG_GCS_ANONYMOUS=true` for read-only dry-runs.
+
 ### Manifest
 
 `versions.json` records, for each published version, its minor version, the
 number of objects published, when it was published, and a `digest`:
 
 ```console
-$ sha256sum <<< "$(<relative-object-path> <md5Hash> for each object, sorted)"
+$ sha256sum <<< "$(<relative-object-path> <md5-hex> for each object, sorted)"
 ```
 
-The `md5Hash` comes from the GCS object listing, so the digest can be
+The MD5 hex digest comes from `rclone lsjson --hash`, so the digest can be
 recomputed by anyone with read access to the bucket, without downloading the
 docs. Entries for versions that are already recorded are never recomputed -
 published docs are immutable, and the recorded digest is what they are verified

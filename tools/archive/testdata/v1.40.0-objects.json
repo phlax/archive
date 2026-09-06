@@ -1,0 +1,4 @@
+[
+  {"Path": "index.html", "Name": "index.html", "Size": 1, "Hashes": {"MD5": "aaa"}},
+  {"Path": "api/index.html", "Name": "index.html", "Size": 1, "Hashes": {"MD5": "bbb"}}
+]
