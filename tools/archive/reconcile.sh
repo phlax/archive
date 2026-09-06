@@ -89,7 +89,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${ARCHIVE_BUCKET}" || -z "${PLAN_INPUTS}" ]]; then
-    echo "Usage: $0 --archive-bucket <bucket> [--meta-bucket <bucket>] [--output <path>] [--dry-run]" >&2
+    echo "Usage: $0 --archive-bucket <bucket> --plan-inputs <path> [--meta-bucket <bucket>] [--output <path>] [--dry-run]" >&2
     exit 2
 fi
 
