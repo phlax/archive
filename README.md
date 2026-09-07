@@ -34,6 +34,9 @@ Federation is a TODO.
 `.github/workflows/envoy-sync.yaml` runs a stateless sync - it holds no state in
 git, and makes no commits.
 
+`.github/workflows/ci.yaml` runs the `tools/archive` tests and a read-only
+reconcile on every pull request.
+
 The read side is a Bazel graph:
 
 1. `//tools/archive:listing` and `//tools/archive:existing` are uncached local
