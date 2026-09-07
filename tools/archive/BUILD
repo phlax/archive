@@ -35,7 +35,7 @@ archive_rclone_genrule(
     name = "listing",
     outs = ["listing.json"],
     cmd = """
-"$${RCLONE}" --config /dev/null lsjson --recursive --hash "gcs:$${ARCHIVE_BUCKET}/envoy/docs" > "$@"
+"$${RCLONE}" --config /dev/null lsjson --recursive "gcs:$${ARCHIVE_BUCKET}/envoy/docs" > "$@"
 """,
 )
 
@@ -73,43 +73,36 @@ jq(
     data = ["jq/versions.jq"],
 )
 
-jq(
-    name = "digest_lines",
-    srcs = [":listing"],
-    out = "digest_lines.txt",
-    filter_file = "jq/digest_lines.jq",
-    args = ARCHIVE_JQ_ARGS + ["-r"],
-    data = ["jq/digest_lines_lib.jq"],
-)
-
-archive_no_cache_genrule(
-    name = "digests",
-    srcs = [":digest_lines"],
-    outs = ["digests.json"],
+archive_rclone_genrule(
+    name = "sidecars",
+    outs = ["sidecars.json"],
     cmd = """
 work="$$(mktemp -d)"
 trap 'rm -rf "$${work}"' EXIT
-while read -r version relative crc32c; do
-    [[ -n "$${version}" ]] || continue
-    printf '%s %s\n' "$${relative}" "$${crc32c}" >> "$${work}/$${version}.lines"
-done < "$(location :digest_lines)"
-if ! compgen -G "$${work}/*.lines" >/dev/null; then
-    printf '{}\n' > "$@"
+if ! "$${RCLONE}" --config /dev/null lsf --files-only "gcs:$${META_BUCKET}/envoy/docs/versions" > "$${work}/names.txt" 2>/dev/null; then
+    printf '[]\n' > "$@"
     exit 0
 fi
-printf '{\n' > "$@"
+printf '[' > "$@"
 sep=""
-for lines in "$${work}"/*.lines; do
-    version="$$(basename "$${lines}" .lines)"
-    sort -o "$${lines}" "$${lines}"
-    digest="$$(sha256sum "$${lines}" | cut -d' ' -f1)"
-    objects="$$(wc -l < "$${lines}" | tr -d ' ')"
-    if [[ -n "$${sep}" ]]; then printf ',\n' >> "$@"; fi
-    printf '  "%s": {"digest": "sha256:%s", "objects": %s}' "$${version}" "$${digest}" "$${objects}" >> "$@"
+while IFS= read -r name; do
+    case "$${name}" in
+        *.json) ;;
+        *) continue ;;
+    esac
+    if [[ -n "$${sep}" ]]; then printf ',' >> "$@"; fi
+    "$${RCLONE}" --config /dev/null cat "gcs:$${META_BUCKET}/envoy/docs/versions/$${name}" >> "$@"
     sep=1
-done
-printf '\n}\n' >> "$@"
+done < "$${work}/names.txt"
+printf ']\n' >> "$@"
 """,
+)
+
+jq(
+    name = "sidecars_by_version",
+    srcs = [":sidecars"],
+    out = "sidecars_by_version.json",
+    filter_file = "jq/sidecars.jq",
 )
 
 jq(
@@ -156,18 +149,15 @@ jq(
         "have",
         "$(location :have)",
         "--slurpfile",
-        "digests",
-        "$(location :digests)",
-        "--rawfile",
-        "generated",
-        "$(location :now)",
+        "sidecars",
+        "$(location :sidecars_by_version)",
     ],
     expand_args = True,
     data = [
-        ":digests",
         ":existing",
         ":have",
-        ":now",
+        ":sidecars_by_version",
+        "jq/new_entries_lib.jq",
         "jq/versions.jq",
     ],
 )
@@ -276,6 +266,9 @@ jq(
         "--slurpfile",
         "existing",
         "$(location :existing)",
+        "--slurpfile",
+        "sidecars",
+        "$(location :sidecars_by_version)",
     ],
     expand_args = True,
     data = [
@@ -284,6 +277,7 @@ jq(
         ":meta_bucket_value",
         ":plan",
         ":plan_inputs",
+        ":sidecars_by_version",
         "jq/versions.jq",
     ],
 )
@@ -293,11 +287,32 @@ sh_binary(
     srcs = ["publish.sh"],
     data = [
         ":archive_bucket_value",
+        ":meta_bucket_value",
+        "digest.sh",
         "runfiles.sh",
         "@rclone//:rclone",
     ],
     env = {
         "ARCHIVE_BUCKET_FILE": "$(rlocationpath :archive_bucket_value)",
+        "META_BUCKET_FILE": "$(rlocationpath :meta_bucket_value)",
+        "RCLONE_BIN": "$(rlocationpath @rclone//:rclone)",
+    },
+    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "backfill",
+    srcs = ["backfill.sh"],
+    data = [
+        ":archive_bucket_value",
+        ":meta_bucket_value",
+        "digest.sh",
+        "runfiles.sh",
+        "@rclone//:rclone",
+    ],
+    env = {
+        "ARCHIVE_BUCKET_FILE": "$(rlocationpath :archive_bucket_value)",
+        "META_BUCKET_FILE": "$(rlocationpath :meta_bucket_value)",
         "RCLONE_BIN": "$(rlocationpath @rclone//:rclone)",
     },
     visibility = ["//visibility:public"],
@@ -346,38 +361,18 @@ jq(
 )
 
 jq(
-    name = "digest_lines_fixture",
-    srcs = ["testdata/listing.json"],
-    out = "digest_lines.fixture.txt",
-    filter_file = "jq/digest_lines.jq",
-    args = ARCHIVE_JQ_ARGS + ["-r"],
-    data = ["jq/digest_lines_lib.jq"],
+    name = "sidecars_by_version_fixture",
+    srcs = ["testdata/sidecars.json"],
+    out = "sidecars_by_version.fixture.json",
+    filter_file = "jq/sidecars.jq",
     testonly = True,
 )
 
-archive_no_cache_genrule(
-    name = "digests_fixture",
-    srcs = [":digest_lines_fixture"],
-    outs = ["digests.fixture.json"],
-    cmd = """
-work="$$(mktemp -d)"
-trap 'rm -rf "$${work}"' EXIT
-while read -r version relative crc32c; do
-    printf '%s %s\n' "$${relative}" "$${crc32c}" >> "$${work}/$${version}.lines"
-done < "$(location :digest_lines_fixture)"
-printf '{\n' > "$@"
-sep=""
-for lines in "$${work}"/*.lines; do
-    version="$$(basename "$${lines}" .lines)"
-    sort -o "$${lines}" "$${lines}"
-    digest="$$(sha256sum "$${lines}" | cut -d' ' -f1)"
-    objects="$$(wc -l < "$${lines}" | tr -d ' ')"
-    if [[ -n "$${sep}" ]]; then printf ',\n' >> "$@"; fi
-    printf '  "%s": {"digest": "sha256:%s", "objects": %s}' "$${version}" "$${digest}" "$${objects}" >> "$@"
-    sep=1
-done
-printf '\n}\n' >> "$@"
-""",
+jq(
+    name = "sidecars_by_version_missing_fixture",
+    srcs = ["testdata/sidecars-missing.json"],
+    out = "sidecars_by_version_missing.fixture.json",
+    filter_file = "jq/sidecars.jq",
     testonly = True,
 )
 
@@ -418,16 +413,43 @@ jq(
         "have",
         "$(location :have_fixture)",
         "--slurpfile",
-        "digests",
-        "$(location :digests_fixture)",
-        "--arg",
-        "generated",
-        "2026-09-06T12:00:00Z",
+        "sidecars",
+        "$(location :sidecars_by_version_fixture)",
     ],
     expand_args = True,
     data = [
-        ":digests_fixture",
         ":have_fixture",
+        ":sidecars_by_version_fixture",
+        "jq/new_entries_lib.jq",
+        "jq/versions.jq",
+        "testdata/existing-manifest.json",
+    ],
+    testonly = True,
+)
+
+jq(
+    name = "new_entries_missing_sidecar_fixture",
+    srcs = [],
+    out = "new_entries_missing_sidecar.fixture.txt",
+    filter_file = "jq/new_entries_error.jq",
+    args = ARCHIVE_JQ_ARGS + [
+        "-n",
+        "-r",
+        "--slurpfile",
+        "existing",
+        "$(location testdata/existing-manifest.json)",
+        "--slurpfile",
+        "have",
+        "$(location :have_fixture)",
+        "--slurpfile",
+        "sidecars",
+        "$(location :sidecars_by_version_missing_fixture)",
+    ],
+    expand_args = True,
+    data = [
+        ":have_fixture",
+        ":sidecars_by_version_missing_fixture",
+        "jq/new_entries_lib.jq",
         "jq/versions.jq",
         "testdata/existing-manifest.json",
     ],
@@ -561,24 +583,18 @@ jq(
         "--slurpfile",
         "existing",
         "$(location testdata/existing-manifest.json)",
+        "--slurpfile",
+        "sidecars",
+        "$(location :sidecars_by_version_fixture)",
     ],
     expand_args = True,
     data = [
         ":plan_fixture",
         ":plan_inputs_fixture",
+        ":sidecars_by_version_fixture",
         "jq/versions.jq",
         "testdata/existing-manifest.json",
     ],
-    testonly = True,
-)
-
-jq(
-    name = "missing_hash_fixture",
-    srcs = ["testdata/listing-missing-hash.json"],
-    out = "missing_hash.fixture.txt",
-    filter_file = "jq/digest_lines_error.jq",
-    args = ARCHIVE_JQ_ARGS + ["-r"],
-    data = ["jq/digest_lines_lib.jq"],
     testonly = True,
 )
 
@@ -591,13 +607,11 @@ jq(
     for name, golden in {
         "changed_false": "changed_false.txt",
         "changed_true": "changed_true.txt",
-        "digest_lines": "digest_lines.txt",
-        "digests": "digests.json",
         "dropped": "dropped.txt",
         "have": "have.json",
         "manifest": "versions.json",
-        "missing_hash": "missing_hash.txt",
         "new_entries": "new_entries.json",
+        "new_entries_missing_sidecar": "new_entries_missing_sidecar.txt",
         "plan": "plan.json",
         "plan_inputs": "plan_inputs.json",
         "summary": "summary.txt",

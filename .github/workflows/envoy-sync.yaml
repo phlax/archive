@@ -15,6 +15,9 @@ on:
       dry-run:
         type: boolean
         default: false
+      backfill:
+        type: boolean
+        default: false
   schedule:
     - cron: '0 6 * * *'
 
@@ -112,6 +115,26 @@ jobs:
         GCS_META_BUCKET: ${{ vars.GCS_META_BUCKET }}
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+    # One-off/repair: backfill sidecars for versions in the archive bucket
+    # that don't have one yet (eg the seeded versions). Only runs when
+    # explicitly requested via workflow_dispatch.
+    - name: 'Backfill sidecars'
+      if: |
+        env.DRY_RUN != 'true'
+        && fromJSON(inputs.backfill || 'false')
+      working-directory: archive
+      run: |
+        set -euo pipefail
+        bazel run \
+            --config=ci --config=remote-envoy-engflow \
+            --//tools/archive:archive_bucket="${GCS_ARCHIVE_BUCKET}" \
+            --//tools/archive:meta_bucket="${GCS_META_BUCKET}" \
+            //tools/archive:backfill -- --all
+      env:
+        GCS_ARCHIVE_BUCKET: ${{ vars.GCS_ARCHIVE_BUCKET }}
+        GCS_META_BUCKET: ${{ vars.GCS_META_BUCKET }}
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
     # Build any missing versions and publish them to the archive bucket. The
     # manifest is rebuilt from fresh bucket listings after any uploads.
     - name: 'Build and publish missing versions'
@@ -134,6 +157,7 @@ jobs:
             if ! bazel run \
                     --config=ci --config=remote-envoy-engflow \
                     --//tools/archive:archive_bucket="${GCS_ARCHIVE_BUCKET}" \
+                    --//tools/archive:meta_bucket="${GCS_META_BUCKET}" \
                     //tools/archive:publish -- \
                     --version="$version" \
                     --tarball="${RUNNER_TEMP}/${version}.tar.gz"; then

@@ -1,4 +1,4 @@
-# A single recursive `rclone lsjson --hash` listing of envoy/docs -> sorted
+# A single recursive `rclone lsjson` listing of envoy/docs -> sorted
 # newest-first array of version prefixes present in the archive bucket.
 
 import "versions" as v;

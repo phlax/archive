@@ -10,11 +10,11 @@ source of truth for what is published.
 | | contents | retention | cache-control |
 |---|---|---|---|
 | `gs://$GCS_ARCHIVE_BUCKET` | `envoy/docs/vX.Y.Z/**` | immutable | `public, max-age=31536000, immutable` |
-| `gs://$GCS_META_BUCKET` | `envoy/docs/versions.json` | none (mutable) | `public, max-age=300` |
+| `gs://$GCS_META_BUCKET` | `envoy/docs/versions.json`, `envoy/docs/versions/vX.Y.Z.json` | none (mutable) | `public, max-age=300` |
 
 Both are public read. `versions.json` is a manifest of what is published - it
-is derived data and can be regenerated from a listing of the archive bucket at
-any time.
+is derived data, folded together from the per-version sidecars
+(`envoy/docs/versions/<version>.json`) by the reconcile.
 
 Required repo configuration:
 
@@ -39,13 +39,13 @@ reconcile on every pull request.
 
 The read side is a Bazel graph:
 
-1. `//tools/archive:listing` and `//tools/archive:existing` are uncached local
+1. `//tools/archive:listing`, `:existing`, and `:sidecars` are uncached local
    `genrule`s that use the pinned `@rclone//:rclone` binary to read the public
    buckets anonymously.
-2. `//tools/archive:plan_inputs`, `:have`, `:plan`, `:missing_txt`,
-   `:new_entries`, `:manifest`, `:changed`, `:dropped`, and `:summary` are
-   `@aspect_bazel_lib` `jq()` actions. The jq programs live under
-   `tools/archive/jq/` and share `versions.jq` for semver helpers.
+2. `//tools/archive:plan_inputs`, `:have`, `:sidecars_by_version`, `:plan`,
+   `:missing_txt`, `:new_entries`, `:manifest`, `:changed`, `:dropped`, and
+   `:summary` are `@aspect_bazel_lib` `jq()` actions. The jq programs live
+   under `tools/archive/jq/` and share `versions.jq` for semver helpers.
 3. `bazel build //tools/archive:plan` writes `bazel-bin/tools/archive/plan.json`.
    `bazel build //tools/archive:manifest` writes
    `bazel-bin/tools/archive/versions.json`.
@@ -62,10 +62,11 @@ $ bazel build \
 ```
 
 The write side is deliberately small: `//tools/archive:publish` extracts one
-docs tarball and uploads it with `rclone copy --ignore-existing`, and
-`//tools/archive:publish_manifest` uploads `versions.json` only when
-`changed.txt` says it changed. Both require `GCP_KEY_PATH` to point at a readable
-service-account key.
+docs tarball, uploads it with `rclone copy --ignore-existing`, and writes its
+sidecar; `//tools/archive:publish_manifest` uploads `versions.json` only when
+`changed.txt` says it changed; and `//tools/archive:backfill` writes sidecars
+for versions that already exist in the archive bucket but have none. All three
+require `GCP_KEY_PATH` to point at a readable service-account key.
 
 To see what would be done without publishing anything, run the workflow with
 `dry-run: true` (scheduled runs are dry runs), or locally build the read-side
@@ -79,19 +80,37 @@ $ cat bazel-bin/tools/archive/summary.txt
 ### Manifest
 
 `versions.json` records, for each published version, its minor version, the
-number of objects published, when it was published, and a `digest`:
+number of objects published, when it was published, and a `digest`.
+
+The digest is a content digest, computed once by whoever publishes the
+version (the sync workflow, or `//tools/archive:backfill` for versions
+uploaded outside it) from the extracted docs tree, before upload:
 
 ```console
-$ sha256sum <<< "$(<relative-object-path> <crc32c> for each object, sorted)"
+$ find . -type f -print0 | sort -z | xargs -0 sha256sum \
+    | sed 's|  \./|  |' | awk '{print $2 " " $1}' | LC_ALL=C sort \
+    | sha256sum | cut -d' ' -f1
 ```
 
-The object path is relative to the version prefix, and the CRC32C digest comes
-from `rclone lsjson --hash` (GCS does not populate MD5 for composite objects,
-created by parallel composite uploads, but always provides CRC32C), so the
-digest can be recomputed by anyone with read access to the bucket, without
-downloading the docs. Entries for versions that are already recorded are never
-recomputed - published docs are immutable, and the recorded digest is what
-they are verified against.
+That is: `sha256` over the sorted lines `"<relative-path>
+<sha256-hex-of-file>"` for every regular file in the version's docs tree,
+where `<relative-path>` is the object key with the `envoy/docs/<version>/`
+prefix stripped, emitted as `sha256:<hex>`. It is defined once, in
+`tools/archive/digest.sh`, and shared by `//tools/archive:publish` and
+`//tools/archive:backfill`.
+
+Each version's digest, object count, and publish time are written as a
+sidecar to the meta bucket at
+`gs://$GCS_META_BUCKET/envoy/docs/versions/<version>.json`, alongside the
+docs upload. Sidecars are written once and never overwritten - published docs
+are immutable, and the recorded digest is what they would be verified
+against. The reconcile's `//tools/archive:sidecars`/`:sidecars_by_version`
+read side folds every sidecar into `versions.json`; it never derives digests
+from a bucket listing, so `//tools/archive:new_entries` fails loudly if a
+version in the archive bucket has no sidecar yet, rather than recording an
+undigested entry. Run `//tools/archive:backfill` (`--version=vX.Y.Z ...` or
+`--all`) to write sidecars for versions that were uploaded outside the
+pipeline.
 
 The manifest also carries the stable/archived classification of the published
 versions, so the website can consume it in place of `versions.yaml`.
