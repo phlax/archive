@@ -602,7 +602,7 @@ sh_test(
     data = [
         "jq/digest_lines.jq",
         "testdata/listing-missing-md5.json",
+        "@jq_toolchains//:resolved_toolchain",
     ],
-    env = {"JQ_BIN": "$(JQ_BIN)"},
-    toolchains = ["@jq_toolchains//:resolved_toolchain"],
+    env = {"JQ_BIN": "$(rootpath @jq_toolchains//:resolved_toolchain)"},
 )
