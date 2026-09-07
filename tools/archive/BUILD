@@ -2,7 +2,6 @@ load("@aspect_bazel_lib//lib:diff_test.bzl", "diff_test")
 load("@aspect_bazel_lib//lib:jq.bzl", "jq")
 load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load(":archive_rules.bzl", "archive_no_cache_genrule", "archive_rclone_genrule", "string_flag_value")
 
 ARCHIVE_JQ_ARGS = [
@@ -79,7 +78,8 @@ jq(
     srcs = [":listing"],
     out = "digest_lines.txt",
     filter_file = "jq/digest_lines.jq",
-    args = ["-r"],
+    args = ARCHIVE_JQ_ARGS + ["-r"],
+    data = ["jq/digest_lines_lib.jq"],
 )
 
 archive_no_cache_genrule(
@@ -89,9 +89,9 @@ archive_no_cache_genrule(
     cmd = """
 work="$$(mktemp -d)"
 trap 'rm -rf "$${work}"' EXIT
-while read -r version relative md5; do
+while read -r version relative crc32c; do
     [[ -n "$${version}" ]] || continue
-    printf '%s %s\n' "$${relative}" "$${md5}" >> "$${work}/$${version}.lines"
+    printf '%s %s\n' "$${relative}" "$${crc32c}" >> "$${work}/$${version}.lines"
 done < "$(location :digest_lines)"
 if ! compgen -G "$${work}/*.lines" >/dev/null; then
     printf '{}\n' > "$@"
@@ -350,7 +350,8 @@ jq(
     srcs = ["testdata/listing.json"],
     out = "digest_lines.fixture.txt",
     filter_file = "jq/digest_lines.jq",
-    args = ["-r"],
+    args = ARCHIVE_JQ_ARGS + ["-r"],
+    data = ["jq/digest_lines_lib.jq"],
     testonly = True,
 )
 
@@ -361,8 +362,8 @@ archive_no_cache_genrule(
     cmd = """
 work="$$(mktemp -d)"
 trap 'rm -rf "$${work}"' EXIT
-while read -r version relative md5; do
-    printf '%s %s\n' "$${relative}" "$${md5}" >> "$${work}/$${version}.lines"
+while read -r version relative crc32c; do
+    printf '%s %s\n' "$${relative}" "$${crc32c}" >> "$${work}/$${version}.lines"
 done < "$(location :digest_lines_fixture)"
 printf '{\n' > "$@"
 sep=""
@@ -571,6 +572,16 @@ jq(
     testonly = True,
 )
 
+jq(
+    name = "missing_hash_fixture",
+    srcs = ["testdata/listing-missing-hash.json"],
+    out = "missing_hash.fixture.txt",
+    filter_file = "jq/digest_lines_error.jq",
+    args = ARCHIVE_JQ_ARGS + ["-r"],
+    data = ["jq/digest_lines_lib.jq"],
+    testonly = True,
+)
+
 [
     diff_test(
         name = name + "_test",
@@ -585,24 +596,10 @@ jq(
         "dropped": "dropped.txt",
         "have": "have.json",
         "manifest": "versions.json",
+        "missing_hash": "missing_hash.txt",
         "new_entries": "new_entries.json",
         "plan": "plan.json",
         "plan_inputs": "plan_inputs.json",
         "summary": "summary.txt",
     }.items()
 ]
-
-sh_test(
-    name = "missing_md5_test",
-    srcs = ["missing_md5_test.sh"],
-    args = [
-        "$(rootpath jq/digest_lines.jq)",
-        "$(rootpath testdata/listing-missing-md5.json)",
-    ],
-    data = [
-        "jq/digest_lines.jq",
-        "testdata/listing-missing-md5.json",
-        "@jq_toolchains//:resolved_toolchain",
-    ],
-    env = {"JQ_BIN": "$(rootpath @jq_toolchains//:resolved_toolchain)"},
-)

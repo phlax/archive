@@ -15,7 +15,7 @@ bazel_dep(name = "toolchains_llvm", version = "1.9.0.envoy", dev_dependency = Tr
 bazel_dep(name = "aspect_bazel_lib", version = "2.22.0")
 bazel_dep(name = "rules_pkg", version = "1.1.0")
 
-# Used by `//tools/archive:BUILD` sh_binary/sh_test targets for `$(JQ_BIN)`
+# Used by `//tools/archive:BUILD` sh_binary targets
 bazel_dep(name = "rules_shell", version = "0.8.0")
 
 bazel_lib_toolchains = use_extension("@aspect_bazel_lib//lib:extensions.bzl", "toolchains")
