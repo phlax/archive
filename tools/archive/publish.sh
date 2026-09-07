@@ -22,7 +22,7 @@ RCLONE="$(archive_rlocation "${RCLONE_BIN}")"
 ARCHIVE_BUCKET="$(cat "$(archive_rlocation "${ARCHIVE_BUCKET_FILE}")")"
 META_BUCKET="$(cat "$(archive_rlocation "${META_BUCKET_FILE}")")"
 work="$(mktemp -d)"
-sidecar="${work}.sidecar.json"
+sidecar="$(mktemp)"
 trap 'rm -rf "${work}" "${sidecar}"' EXIT
 tar --no-same-owner -xzf "${TARBALL}" -C "${work}"
 files="$(find "${work}" -type f | wc -l | tr -d ' ')"

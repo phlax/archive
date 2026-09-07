@@ -16,8 +16,11 @@ _archive_tree_hashed_lines() {
     (cd "${dir}" && find . -type f -print0 | sort -z | xargs -r0 sha256sum) | sed 's|  \./|  |' | awk '{print $2 " " $1}' | LC_ALL=C sort
 }
 
-# archive_tree_digest <dir> -> prints "sha256:<hex>" for the tree.
-archive_tree_digest() {
+# _archive_tree_summary <dir> -> sets ARCHIVE_TREE_DIGEST ("sha256:<hex>")
+# and ARCHIVE_TREE_OBJECTS (file count) from a single traversal of <dir>.
+# Internal; the sole implementation of the digest/count computation, used by
+# all three public functions below.
+_archive_tree_summary() {
     local dir="$1"
     local lines
     lines="$(_archive_tree_hashed_lines "${dir}")"
@@ -25,28 +28,29 @@ archive_tree_digest() {
         echo "ERROR: cannot compute digest, no regular files under ${dir}" >&2
         return 1
     fi
-    printf 'sha256:%s\n' "$(printf '%s\n' "${lines}" | sha256sum | cut -d' ' -f1)"
+    ARCHIVE_TREE_OBJECTS="$(printf '%s\n' "${lines}" | wc -l | tr -d ' ')"
+    ARCHIVE_TREE_DIGEST="sha256:$(printf '%s\n' "${lines}" | sha256sum | cut -d' ' -f1)"
+}
+
+# archive_tree_digest <dir> -> prints "sha256:<hex>" for the tree.
+archive_tree_digest() {
+    _archive_tree_summary "$1" || return 1
+    printf '%s\n' "${ARCHIVE_TREE_DIGEST}"
 }
 
 # archive_tree_objects <dir> -> count of regular files.
 archive_tree_objects() {
-    local dir="$1"
-    find "${dir}" -type f | wc -l | tr -d ' '
+    _archive_tree_summary "$1" || return 1
+    printf '%s\n' "${ARCHIVE_TREE_OBJECTS}"
 }
 
 # archive_write_sidecar <version> <dir> <out-file> -> writes the sidecar JSON
 # for <dir> to <out-file>.
 archive_write_sidecar() {
     local version="$1" dir="$2" out="$3"
-    local lines objects digest published
-    lines="$(_archive_tree_hashed_lines "${dir}")"
-    if [[ -z "${lines}" ]]; then
-        echo "ERROR: cannot compute digest, no regular files under ${dir}" >&2
-        return 1
-    fi
-    objects="$(printf '%s\n' "${lines}" | wc -l | tr -d ' ')"
-    digest="sha256:$(printf '%s\n' "${lines}" | sha256sum | cut -d' ' -f1)"
+    _archive_tree_summary "${dir}" || return 1
+    local published
     published="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
     printf '{"version": "%s", "digest": "%s", "objects": %s, "published": "%s"}\n' \
-        "${version}" "${digest}" "${objects}" "${published}" > "${out}"
+        "${version}" "${ARCHIVE_TREE_DIGEST}" "${ARCHIVE_TREE_OBJECTS}" "${published}" > "${out}"
 }
