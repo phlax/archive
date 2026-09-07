@@ -32,6 +32,7 @@ META_BUCKET="$(cat "$(archive_rlocation "${META_BUCKET_FILE}")")"
 existing_sidecars() {
     "${RCLONE}" --config /dev/null lsf --files-only "gcs:${META_BUCKET}/envoy/docs/versions" 2>/dev/null || true
 }
+EXISTING_SIDECARS="$(existing_sidecars)"
 
 if [[ "${ALL}" == "true" ]]; then
     VERSIONS=()
@@ -41,7 +42,7 @@ if [[ "${ALL}" == "true" ]]; then
     done < <("${RCLONE}" --config /dev/null lsf --dirs-only "gcs:${ARCHIVE_BUCKET}/envoy/docs" \
         | sed 's#/$##' \
         | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' \
-        | grep -vxF -f <(existing_sidecars | sed 's/\.json$//') || true)
+        | grep -vxF -f <(printf '%s\n' "${EXISTING_SIDECARS}" | sed 's/\.json$//') || true)
 fi
 
 [[ "${#VERSIONS[@]}" -gt 0 ]] || { echo "Nothing to backfill"; exit 0; }
@@ -57,7 +58,7 @@ for version in "${VERSIONS[@]}"; do
         printf '%s: %s\n' "${version}" "$(cat "${sidecar}")"
         continue
     fi
-    if existing_sidecars | grep -qxF "${version}.json"; then
+    if printf '%s\n' "${EXISTING_SIDECARS}" | grep -qxF "${version}.json"; then
         printf 'Sidecar already exists for %s, skipping\n' "${version}"
         continue
     fi
