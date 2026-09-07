@@ -10,6 +10,12 @@ META_BUCKET="$(cat "$(archive_rlocation "${META_BUCKET_FILE}")")"
 MANIFEST="$(archive_rlocation "${MANIFEST_FILE}")"
 CHANGED="$(archive_rlocation "${CHANGED_FILE}")"
 DROPPED="$(archive_rlocation "${DROPPED_FILE}")"
+MISSING_SIDECARS="$(archive_rlocation "${MISSING_SIDECARS_FILE}")"
+if [[ -s "${MISSING_SIDECARS}" ]]; then
+    echo "ERROR: archive versions without sidecars - run //tools/archive:backfill first:" >&2
+    sed 's/^/  /' "${MISSING_SIDECARS}" >&2
+    exit 1
+fi
 
 if [[ "$(cat "${CHANGED}")" != "true" ]]; then
     echo "Manifest is up to date, not updating"

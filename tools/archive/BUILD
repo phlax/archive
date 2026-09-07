@@ -163,6 +163,32 @@ jq(
 )
 
 jq(
+    name = "missing_sidecars",
+    srcs = [],
+    out = "missing_sidecars.txt",
+    filter_file = "jq/missing_sidecars.jq",
+    args = ARCHIVE_JQ_ARGS + [
+        "-n",
+        "-r",
+        "--slurpfile",
+        "existing",
+        "$(location :existing)",
+        "--slurpfile",
+        "have",
+        "$(location :have)",
+        "--slurpfile",
+        "sidecars",
+        "$(location :sidecars_by_version)",
+    ],
+    expand_args = True,
+    data = [
+        ":existing",
+        ":have",
+        ":sidecars_by_version",
+    ],
+)
+
+jq(
     name = "manifest",
     srcs = [],
     out = "versions.json",
@@ -326,6 +352,7 @@ sh_binary(
         ":dropped",
         ":manifest",
         ":meta_bucket_value",
+        ":missing_sidecars",
         "runfiles.sh",
         "@rclone//:rclone",
     ],
@@ -334,6 +361,7 @@ sh_binary(
         "DROPPED_FILE": "$(rlocationpath :dropped)",
         "MANIFEST_FILE": "$(rlocationpath :manifest)",
         "META_BUCKET_FILE": "$(rlocationpath :meta_bucket_value)",
+        "MISSING_SIDECARS_FILE": "$(rlocationpath :missing_sidecars)",
         "RCLONE_BIN": "$(rlocationpath @rclone//:rclone)",
     },
     visibility = ["//visibility:public"],
@@ -430,8 +458,36 @@ jq(
 jq(
     name = "new_entries_missing_sidecar_fixture",
     srcs = [],
-    out = "new_entries_missing_sidecar.fixture.txt",
-    filter_file = "jq/new_entries_error.jq",
+    out = "new_entries_missing_sidecar.fixture.json",
+    filter_file = "jq/new_entries.jq",
+    args = ARCHIVE_JQ_ARGS + [
+        "-n",
+        "--slurpfile",
+        "existing",
+        "$(location testdata/existing-manifest.json)",
+        "--slurpfile",
+        "have",
+        "$(location :have_fixture)",
+        "--slurpfile",
+        "sidecars",
+        "$(location :sidecars_by_version_missing_fixture)",
+    ],
+    expand_args = True,
+    data = [
+        ":have_fixture",
+        ":sidecars_by_version_missing_fixture",
+        "jq/new_entries_lib.jq",
+        "jq/versions.jq",
+        "testdata/existing-manifest.json",
+    ],
+    testonly = True,
+)
+
+jq(
+    name = "missing_sidecars_fixture",
+    srcs = [],
+    out = "missing_sidecars.fixture.txt",
+    filter_file = "jq/missing_sidecars.jq",
     args = ARCHIVE_JQ_ARGS + [
         "-n",
         "-r",
@@ -449,8 +505,33 @@ jq(
     data = [
         ":have_fixture",
         ":sidecars_by_version_missing_fixture",
-        "jq/new_entries_lib.jq",
-        "jq/versions.jq",
+        "testdata/existing-manifest.json",
+    ],
+    testonly = True,
+)
+
+jq(
+    name = "missing_sidecars_none_fixture",
+    srcs = [],
+    out = "missing_sidecars_none.fixture.txt",
+    filter_file = "jq/missing_sidecars.jq",
+    args = ARCHIVE_JQ_ARGS + [
+        "-n",
+        "-r",
+        "--slurpfile",
+        "existing",
+        "$(location testdata/existing-manifest.json)",
+        "--slurpfile",
+        "have",
+        "$(location :have_fixture)",
+        "--slurpfile",
+        "sidecars",
+        "$(location :sidecars_by_version_fixture)",
+    ],
+    expand_args = True,
+    data = [
+        ":have_fixture",
+        ":sidecars_by_version_fixture",
         "testdata/existing-manifest.json",
     ],
     testonly = True,
@@ -610,8 +691,10 @@ jq(
         "dropped": "dropped.txt",
         "have": "have.json",
         "manifest": "versions.json",
+        "missing_sidecars": "missing_sidecars.txt",
+        "missing_sidecars_none": "missing_sidecars_none.txt",
         "new_entries": "new_entries.json",
-        "new_entries_missing_sidecar": "new_entries_missing_sidecar.txt",
+        "new_entries_missing_sidecar": "new_entries_missing_sidecar.json",
         "plan": "plan.json",
         "plan_inputs": "plan_inputs.json",
         "summary": "summary.txt",

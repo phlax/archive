@@ -106,11 +106,11 @@ docs upload. Sidecars are written once and never overwritten - published docs
 are immutable, and the recorded digest is what they would be verified
 against. The reconcile's `//tools/archive:sidecars`/`:sidecars_by_version`
 read side folds every sidecar into `versions.json`; it never derives digests
-from a bucket listing, so `//tools/archive:new_entries` fails loudly if a
-version in the archive bucket has no sidecar yet, rather than recording an
-undigested entry. Run `//tools/archive:backfill` (`--version=vX.Y.Z ...` or
-`--all`) to write sidecars for versions that were uploaded outside the
-pipeline.
+from a bucket listing, so the read-only reconcile
+(`//tools/archive:new_entries`) skips versions without a sidecar rather than
+recording an undigested entry, and `//tools/archive:publish_manifest`
+refuses to upload the manifest until `//tools/archive:backfill`
+(`--version=vX.Y.Z ...` or `--all`) has been run for them.
 
 The manifest also carries the stable/archived classification of the published
 versions, so the website can consume it in place of `versions.yaml`.
