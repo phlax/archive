@@ -45,7 +45,7 @@ archive_rclone_genrule(
     outs = ["existing.json"],
     cmd = """
 if ! "$${RCLONE}" --config /dev/null cat "gcs:$${META_BUCKET}/envoy/docs/versions.json" > "$@" 2>/dev/null; then
-    printf '{}\\n' > "$@"
+    printf '{}\n' > "$@"
 fi
 """,
 )
@@ -53,7 +53,7 @@ fi
 archive_no_cache_genrule(
     name = "now",
     outs = ["now.txt"],
-    cmd = "date -u +%Y-%m-%dT%H:%M:%SZ > \\"$@\\"",
+    cmd = "date -u +%Y-%m-%dT%H:%M:%SZ > \"$@\"",
 )
 
 jq(
@@ -91,24 +91,24 @@ work="$$(mktemp -d)"
 trap 'rm -rf "$${work}"' EXIT
 while read -r version relative md5; do
     [[ -n "$${version}" ]] || continue
-    printf '%s %s\\n' "$${relative}" "$${md5}" >> "$${work}/$${version}.lines"
+    printf '%s %s\n' "$${relative}" "$${md5}" >> "$${work}/$${version}.lines"
 done < "$(location :digest_lines)"
 if ! compgen -G "$${work}/*.lines" >/dev/null; then
-    printf '{}\\n' > "$@"
+    printf '{}\n' > "$@"
     exit 0
 fi
-printf '{\\n' > "$@"
+printf '{\n' > "$@"
 sep=""
 for lines in "$${work}"/*.lines; do
     version="$$(basename "$${lines}" .lines)"
     sort -o "$${lines}" "$${lines}"
     digest="$$(sha256sum "$${lines}" | cut -d' ' -f1)"
     objects="$$(wc -l < "$${lines}" | tr -d ' ')"
-    if [[ -n "$${sep}" ]]; then printf ',\\n' >> "$@"; fi
+    if [[ -n "$${sep}" ]]; then printf ',\n' >> "$@"; fi
     printf '  "%s": {"digest": "sha256:%s", "objects": %s}' "$${version}" "$${digest}" "$${objects}" >> "$@"
     sep=1
 done
-printf '\\n}\\n' >> "$@"
+printf '\n}\n' >> "$@"
 """,
 )
 
@@ -356,20 +356,20 @@ archive_no_cache_genrule(
 work="$$(mktemp -d)"
 trap 'rm -rf "$${work}"' EXIT
 while read -r version relative md5; do
-    printf '%s %s\\n' "$${relative}" "$${md5}" >> "$${work}/$${version}.lines"
+    printf '%s %s\n' "$${relative}" "$${md5}" >> "$${work}/$${version}.lines"
 done < "$(location :digest_lines_fixture)"
-printf '{\\n' > "$@"
+printf '{\n' > "$@"
 sep=""
 for lines in "$${work}"/*.lines; do
     version="$$(basename "$${lines}" .lines)"
     sort -o "$${lines}" "$${lines}"
     digest="$$(sha256sum "$${lines}" | cut -d' ' -f1)"
     objects="$$(wc -l < "$${lines}" | tr -d ' ')"
-    if [[ -n "$${sep}" ]]; then printf ',\\n' >> "$@"; fi
+    if [[ -n "$${sep}" ]]; then printf ',\n' >> "$@"; fi
     printf '  "%s": {"digest": "sha256:%s", "objects": %s}' "$${version}" "$${digest}" "$${objects}" >> "$@"
     sep=1
 done
-printf '\\n}\\n' >> "$@"
+printf '\n}\n' >> "$@"
 """,
     testonly = True,
 )
