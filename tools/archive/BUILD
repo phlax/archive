@@ -126,6 +126,7 @@ jq(
         "have",
         "$(location :have)",
     ],
+    expand_args = True,
     data = [
         ":have",
         ":plan_inputs",
@@ -161,6 +162,7 @@ jq(
         "generated",
         "$(location :now)",
     ],
+    expand_args = True,
     data = [
         ":digests",
         ":existing",
@@ -196,6 +198,7 @@ jq(
         "stable_minors",
         "4",
     ],
+    expand_args = True,
     data = [
         ":archive_bucket_value",
         ":existing",
@@ -221,6 +224,7 @@ jq(
         "have",
         "$(location :have)",
     ],
+    expand_args = True,
     data = [
         ":existing",
         ":have",
@@ -242,6 +246,7 @@ jq(
         "manifest",
         "$(location :manifest)",
     ],
+    expand_args = True,
     data = [
         ":existing",
         ":manifest",
@@ -272,6 +277,7 @@ jq(
         "existing",
         "$(location :existing)",
     ],
+    expand_args = True,
     data = [
         ":archive_bucket_value",
         ":existing",
@@ -388,6 +394,7 @@ jq(
         "have",
         "$(location :have_fixture)",
     ],
+    expand_args = True,
     data = [
         ":have_fixture",
         ":plan_inputs_fixture",
@@ -416,6 +423,7 @@ jq(
         "generated",
         "2026-09-06T12:00:00Z",
     ],
+    expand_args = True,
     data = [
         ":digests_fixture",
         ":have_fixture",
@@ -451,6 +459,7 @@ jq(
         "stable_minors",
         "4",
     ],
+    expand_args = True,
     data = [
         ":have_fixture",
         ":new_entries_fixture",
@@ -475,6 +484,7 @@ jq(
         "have",
         "$(location :have_fixture)",
     ],
+    expand_args = True,
     data = [
         ":have_fixture",
         "jq/versions.jq",
@@ -497,6 +507,7 @@ jq(
         "manifest",
         "$(location :manifest_fixture)",
     ],
+    expand_args = True,
     data = [
         ":manifest_fixture",
         "testdata/existing-manifest.json",
@@ -518,6 +529,7 @@ jq(
         "manifest",
         "$(location :manifest_fixture)",
     ],
+    expand_args = True,
     data = [
         ":manifest_fixture",
         "testdata/manifest-same-generated.json",
@@ -549,6 +561,7 @@ jq(
         "existing",
         "$(location testdata/existing-manifest.json)",
     ],
+    expand_args = True,
     data = [
         ":plan_fixture",
         ":plan_inputs_fixture",
