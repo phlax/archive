@@ -82,14 +82,16 @@ $ cat bazel-bin/tools/archive/summary.txt
 number of objects published, when it was published, and a `digest`:
 
 ```console
-$ sha256sum <<< "$(<relative-object-path> <md5-hex> for each object, sorted)"
+$ sha256sum <<< "$(<relative-object-path> <crc32c> for each object, sorted)"
 ```
 
-The object path is relative to the version prefix, and the MD5 hex digest comes
-from `rclone lsjson --hash`, so the digest can be recomputed by anyone with read
-access to the bucket, without downloading the docs. Entries for versions that
-are already recorded are never recomputed - published docs are immutable, and
-the recorded digest is what they are verified against.
+The object path is relative to the version prefix, and the CRC32C digest comes
+from `rclone lsjson --hash` (GCS does not populate MD5 for composite objects,
+created by parallel composite uploads, but always provides CRC32C), so the
+digest can be recomputed by anyone with read access to the bucket, without
+downloading the docs. Entries for versions that are already recorded are never
+recomputed - published docs are immutable, and the recorded digest is what
+they are verified against.
 
 The manifest also carries the stable/archived classification of the published
 versions, so the website can consume it in place of `versions.yaml`.
