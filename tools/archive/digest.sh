@@ -13,7 +13,7 @@
 # lines for every regular file in <dir>, one traversal per call. Internal.
 _archive_tree_hashed_lines() {
     local dir="$1"
-    (cd "${dir}" && find . -type f -print0 | sort -z | xargs -r0 sha256sum) | sed 's|  \./|  |' | awk '{print $2 " " $1}' | LC_ALL=C sort
+    (cd "${dir}" && find . -type f -print0 | sort -z | xargs -r0 sha256sum) | sed 's|  \./|  |' | sed -E 's/^([0-9a-f]+)  (.*)$/\2 \1/' | LC_ALL=C sort
 }
 
 # _archive_tree_summary <dir> -> sets ARCHIVE_TREE_DIGEST ("sha256:<hex>")

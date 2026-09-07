@@ -87,8 +87,8 @@ version (the sync workflow, or `//tools/archive:backfill` for versions
 uploaded outside it) from the extracted docs tree, before upload:
 
 ```console
-$ find . -type f -print0 | sort -z | xargs -0 sha256sum \
-    | sed 's|  \./|  |' | awk '{print $2 " " $1}' | LC_ALL=C sort \
+$ find . -type f -print0 | sort -z | xargs -r0 sha256sum \
+    | sed 's|  \./|  |' | sed -E 's/^([0-9a-f]+)  (.*)$/\2 \1/' | LC_ALL=C sort \
     | sha256sum | cut -d' ' -f1
 ```
 
